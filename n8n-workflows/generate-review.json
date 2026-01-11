@@ -1,0 +1,267 @@
+{
+    "name": "Generate Product Review",
+    "nodes": [
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "generate-review",
+                "responseMode": "responseNode",
+                "options": {}
+            },
+            "name": "Webhook",
+            "type": "n8n-nodes-base.webhook",
+            "position": [
+                250,
+                300
+            ],
+            "webhookId": "generate-review"
+        },
+        {
+            "parameters": {
+                "url": "={{ $json.productUrl }}",
+                "options": {}
+            },
+            "name": "Fetch Product Page",
+            "type": "n8n-nodes-base.httpRequest",
+            "position": [
+                450,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "url": "https://www.amazon.com/s",
+                "qs": {
+                    "k": "={{ $json.productName }}"
+                },
+                "options": {}
+            },
+            "name": "Search Amazon",
+            "type": "n8n-nodes-base.httpRequest",
+            "position": [
+                650,
+                200
+            ]
+        },
+        {
+            "parameters": {
+                "url": "https://oauth.reddit.com/search",
+                "authentication": "genericCredentialType",
+                "genericAuthType": "httpHeaderAuth",
+                "qs": {
+                    "q": "={{ $json.productName }}",
+                    "sort": "relevance",
+                    "limit": "25"
+                }
+            },
+            "name": "Search Reddit",
+            "type": "n8n-nodes-base.httpRequest",
+            "position": [
+                650,
+                400
+            ]
+        },
+        {
+            "parameters": {
+                "url": "https://www.zap.co.il/search.aspx",
+                "qs": {
+                    "keyword": "={{ $json.productName }}"
+                }
+            },
+            "name": "Search ZAP",
+            "type": "n8n-nodes-base.httpRequest",
+            "position": [
+                650,
+                500
+            ]
+        },
+        {
+            "parameters": {
+                "mode": "combine",
+                "combineBy": "combineAll",
+                "options": {}
+            },
+            "name": "Merge Results",
+            "type": "n8n-nodes-base.merge",
+            "position": [
+                850,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "model": "gpt-4o",
+                "messages": {
+                    "values": [
+                        {
+                            "role": "system",
+                            "content": "אתה כותב ביקורות מוצרים מקצועי בעברית. תפקידך לסנתז מידע ממקורות שונים ליצירת ביקורת מקיפה ומאוזנת."
+                        },
+                        {
+                            "role": "user",
+                            "content": "בהתבסס על המידע הבא, כתוב ביקורת מקיפה בעברית:\n\nשם המוצר: {{ $json.productName }}\n\nמידע מ-Amazon:\n{{ $json.amazonData }}\n\nמידע מ-Reddit:\n{{ $json.redditData }}\n\nמידע מ-ZAP:\n{{ $json.zapData }}\n\nפלט בפורמט JSON:\n{\n  \"summary_he\": \"סיכום בעברית (3-4 פסקאות)\",\n  \"pros\": [\"יתרון 1\", \"יתרון 2\", ...],\n  \"cons\": [\"חיסרון 1\", \"חיסרון 2\", ...],\n  \"detailed_analysis\": {\n    \"עיצוב\": \"...\",\n    \"ביצועים\": \"...\",\n    \"תמורה למחיר\": \"...\"\n  },\n  \"overall_score\": 85\n}"
+                        }
+                    ]
+                },
+                "options": {
+                    "temperature": 0.7,
+                    "maxTokens": 2000
+                }
+            },
+            "name": "GPT-4 Synthesis",
+            "type": "@n8n/n8n-nodes-langchain.openAi",
+            "position": [
+                1050,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "operation": "insert",
+                "schema": "public",
+                "table": "products",
+                "columns": "name, slug, category, images, specs, overall_score"
+            },
+            "name": "Save Product",
+            "type": "n8n-nodes-base.supabase",
+            "position": [
+                1250,
+                200
+            ]
+        },
+        {
+            "parameters": {
+                "operation": "insert",
+                "schema": "public",
+                "table": "reviews",
+                "columns": "product_id, summary_he, pros, cons, detailed_analysis, sources, status"
+            },
+            "name": "Save Review",
+            "type": "n8n-nodes-base.supabase",
+            "position": [
+                1250,
+                400
+            ]
+        },
+        {
+            "parameters": {
+                "respondWith": "json",
+                "responseBody": "={{ JSON.stringify({ success: true, productId: $json.productId, message: 'Review generated successfully' }) }}"
+            },
+            "name": "Respond",
+            "type": "n8n-nodes-base.respondToWebhook",
+            "position": [
+                1450,
+                300
+            ]
+        }
+    ],
+    "connections": {
+        "Webhook": {
+            "main": [
+                [
+                    {
+                        "node": "Fetch Product Page",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Fetch Product Page": {
+            "main": [
+                [
+                    {
+                        "node": "Search Amazon",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "Search Reddit",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "Search ZAP",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Search Amazon": {
+            "main": [
+                [
+                    {
+                        "node": "Merge Results",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Search Reddit": {
+            "main": [
+                [
+                    {
+                        "node": "Merge Results",
+                        "type": "main",
+                        "index": 1
+                    }
+                ]
+            ]
+        },
+        "Search ZAP": {
+            "main": [
+                [
+                    {
+                        "node": "Merge Results",
+                        "type": "main",
+                        "index": 2
+                    }
+                ]
+            ]
+        },
+        "Merge Results": {
+            "main": [
+                [
+                    {
+                        "node": "GPT-4 Synthesis",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "GPT-4 Synthesis": {
+            "main": [
+                [
+                    {
+                        "node": "Save Product",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "Save Review",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Save Product": {
+            "main": [
+                [
+                    {
+                        "node": "Respond",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "settings": {
+        "executionOrder": "v1"
+    }
+}

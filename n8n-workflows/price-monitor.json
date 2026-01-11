@@ -1,0 +1,242 @@
+{
+    "name": "Price Monitor",
+    "nodes": [
+        {
+            "parameters": {
+                "rule": {
+                    "interval": [
+                        {
+                            "field": "hours",
+                            "hoursInterval": 6
+                        }
+                    ]
+                }
+            },
+            "name": "Schedule",
+            "type": "n8n-nodes-base.scheduleTrigger",
+            "position": [
+                250,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "operation": "getAll",
+                "schema": "public",
+                "table": "products",
+                "returnAll": true
+            },
+            "name": "Get All Products",
+            "type": "n8n-nodes-base.supabase",
+            "position": [
+                450,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "batchSize": 1,
+                "options": {}
+            },
+            "name": "Loop Products",
+            "type": "n8n-nodes-base.splitInBatches",
+            "position": [
+                650,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "url": "https://www.zap.co.il/search.aspx",
+                "qs": {
+                    "keyword": "={{ $json.name }}"
+                },
+                "options": {}
+            },
+            "name": "Check ZAP Price",
+            "type": "n8n-nodes-base.httpRequest",
+            "position": [
+                850,
+                200
+            ]
+        },
+        {
+            "parameters": {
+                "url": "https://ksp.co.il/search",
+                "qs": {
+                    "q": "={{ $json.name }}"
+                },
+                "options": {}
+            },
+            "name": "Check KSP Price",
+            "type": "n8n-nodes-base.httpRequest",
+            "position": [
+                850,
+                400
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const productId = $input.first().json.id;\nconst zapPrice = $input.all()[1]?.json?.price || null;\nconst kspPrice = $input.all()[2]?.json?.price || null;\n\nconst prices = [];\n\nif (zapPrice) {\n  prices.push({\n    product_id: productId,\n    source: 'zap',\n    price: zapPrice,\n    currency: 'ILS',\n    checked_at: new Date().toISOString()\n  });\n}\n\nif (kspPrice) {\n  prices.push({\n    product_id: productId,\n    source: 'ksp',\n    price: kspPrice,\n    currency: 'ILS',\n    checked_at: new Date().toISOString()\n  });\n}\n\nreturn prices.map(p => ({ json: p }));"
+            },
+            "name": "Parse Prices",
+            "type": "n8n-nodes-base.code",
+            "position": [
+                1050,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "operation": "upsert",
+                "schema": "public",
+                "table": "prices",
+                "columns": "product_id, source, price, currency, checked_at",
+                "conflictColumns": "product_id, source"
+            },
+            "name": "Update Prices",
+            "type": "n8n-nodes-base.supabase",
+            "position": [
+                1250,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "number": [
+                        {
+                            "value1": "={{ $json.priceChange }}",
+                            "operation": "larger",
+                            "value2": 10
+                        }
+                    ]
+                }
+            },
+            "name": "Check Price Drop",
+            "type": "n8n-nodes-base.if",
+            "position": [
+                1450,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "channel": "#price-alerts",
+                "text": "🔥 מחיר ירד!\n\nמוצר: {{ $json.productName }}\nמחיר חדש: ₪{{ $json.newPrice }}\nירידה של: {{ $json.priceChange }}%\n\nלמוצר: {{ $json.productUrl }}",
+                "otherOptions": {}
+            },
+            "name": "Alert Slack",
+            "type": "n8n-nodes-base.slack",
+            "position": [
+                1650,
+                200
+            ]
+        }
+    ],
+    "connections": {
+        "Schedule": {
+            "main": [
+                [
+                    {
+                        "node": "Get All Products",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Get All Products": {
+            "main": [
+                [
+                    {
+                        "node": "Loop Products",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Loop Products": {
+            "main": [
+                [
+                    {
+                        "node": "Check ZAP Price",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "Check KSP Price",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Check ZAP Price": {
+            "main": [
+                [
+                    {
+                        "node": "Parse Prices",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Check KSP Price": {
+            "main": [
+                [
+                    {
+                        "node": "Parse Prices",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Parse Prices": {
+            "main": [
+                [
+                    {
+                        "node": "Update Prices",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Update Prices": {
+            "main": [
+                [
+                    {
+                        "node": "Check Price Drop",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Check Price Drop": {
+            "main": [
+                [
+                    {
+                        "node": "Alert Slack",
+                        "type": "main",
+                        "index": 0
+                    }
+                ],
+                [
+                    {
+                        "node": "Loop Products",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "settings": {
+        "executionOrder": "v1"
+    }
+}
