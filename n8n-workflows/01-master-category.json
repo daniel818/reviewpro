@@ -11,6 +11,7 @@
             "id": "webhook-1",
             "name": "Webhook",
             "type": "n8n-nodes-base.webhook",
+            "typeVersion": 2,
             "position": [
                 200,
                 300
@@ -24,14 +25,16 @@
             "id": "code-config",
             "name": "Load Category Config",
             "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
             "position": [
-                400,
+                420,
                 300
             ]
         },
         {
             "parameters": {
                 "url": "https://google.serper.dev/search",
+                "method": "POST",
                 "sendHeaders": true,
                 "headerParameters": {
                     "parameters": [
@@ -53,8 +56,9 @@
             "id": "search-products",
             "name": "Search Top Products",
             "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
             "position": [
-                600,
+                640,
                 300
             ]
         },
@@ -62,28 +66,16 @@
             "parameters": {
                 "model": "gpt-4o-mini",
                 "options": {
-                    "temperature": 0.3,
-                    "maxTokens": 3000
-                },
-                "messages": {
-                    "values": [
-                        {
-                            "role": "system",
-                            "content": "You are a product research assistant. Extract product information from search results accurately. Only include real products with model numbers."
-                        },
-                        {
-                            "role": "user",
-                            "content": "=From these search results about {{ $json.config.displayName }}, extract the top {{ $json.limit }} products:\n\nSearch Results:\n{{ JSON.stringify($json.organic || [], null, 2) }}\n\nFor each product, extract:\n- productName: Full product name\n- model: Official model number\n- vendor: Manufacturer/brand\n- releaseDate: Approximate release date if known\n- estimatedPrice: Price if mentioned\n\nRequired specs to look for: {{ $json.config.requiredSpecs.join(', ') }}\n\nReturn JSON array:\n[\n  {\n    \"productName\": \"LG C4 OLED 65\\\"\",\n    \"model\": \"OLED65C4PUA\",\n    \"vendor\": \"LG\",\n    \"releaseDate\": \"2024-03\",\n    \"estimatedPrice\": \"$1499\",\n    \"specs\": {\n      \"screenSize\": \"65 inch\",\n      \"resolution\": \"3840x2160\",\n      \"panelType\": \"OLED\"\n    }\n  }\n]\n\nOnly include products you're confident about. Return valid JSON array only."
-                        }
-                    ]
+                    "temperature": 0.3
                 }
             },
-            "id": "gpt4-extract",
-            "name": "GPT-4 Extract Products",
-            "type": "@n8n/n8n-nodes-langchain.openAi",
+            "id": "openai-chat-model",
+            "name": "OpenAI Chat Model",
+            "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+            "typeVersion": 1,
             "position": [
-                800,
-                300
+                780,
+                520
             ],
             "credentials": {
                 "openAiApi": {
@@ -94,13 +86,30 @@
         },
         {
             "parameters": {
-                "jsCode": "// Parse extracted products\nconst rawResponse = $input.first().json.text || $input.first().json.message?.content || '';\nconst configData = $('Load Category Config').first().json;\n\nlet products;\ntry {\n  // Try to extract JSON array from response\n  const jsonMatch = rawResponse.match(/\\[[\\s\\S]*\\]/);\n  if (jsonMatch) {\n    products = JSON.parse(jsonMatch[0]);\n  } else {\n    throw new Error('No JSON array found');\n  }\n} catch (e) {\n  products = [];\n}\n\n// Enrich products with category info and search prompts\nproducts = products.map((p, i) => ({\n  ...p,\n  category: configData.category,\n  categoryConfig: configData.config,\n  searchPrompt: `${p.productName} ${p.model || ''} review specs`.trim(),\n  order: i + 1\n}));\n\nreturn {\n  category: configData.category,\n  categoryDisplay: configData.config.displayName,\n  totalProducts: products.length,\n  products: products.slice(0, configData.limit)\n};"
+                "text": "=From these search results about {{ $json.config.displayName }}, extract the top {{ $json.limit }} products:\n\nSearch Results:\n{{ JSON.stringify($json.organic || [], null, 2) }}\n\nFor each product, extract:\n- productName: Full product name\n- model: Official model number\n- vendor: Manufacturer/brand\n- releaseDate: Approximate release date if known\n- estimatedPrice: Price if mentioned\n\nRequired specs to look for: {{ $json.config.requiredSpecs.join(', ') }}\n\nReturn JSON array:\n[\n  {\n    \"productName\": \"LG C4 OLED 65\\\"\",\n    \"model\": \"OLED65C4PUA\",\n    \"vendor\": \"LG\",\n    \"releaseDate\": \"2024-03\",\n    \"estimatedPrice\": \"$1499\",\n    \"specs\": {\n      \"screenSize\": \"65 inch\",\n      \"resolution\": \"3840x2160\",\n      \"panelType\": \"OLED\"\n    }\n  }\n]\n\nOnly include products you're confident about. Return valid JSON array only.",
+                "options": {
+                    "systemMessage": "You are a product research assistant. Extract product information from search results accurately. Only include real products with model numbers. You MUST return valid JSON."
+                }
+            },
+            "id": "ai-agent",
+            "name": "AI Agent",
+            "type": "@n8n/n8n-nodes-langchain.agent",
+            "typeVersion": 1.6,
+            "position": [
+                860,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "// Parse extracted products\nconst rawResponse = $input.first().json.output || $input.first().json.text || $input.first().json.message?.content || '';\nconst configData = $('Load Category Config').first().json;\n\nlet products;\ntry {\n  // Try to extract JSON array from response\n  // Using a broader match to catch arrays inside text\n  const jsonMatch = rawResponse.match(/\\[[\\s\\S]*\\]/);\n  if (jsonMatch) {\n    products = JSON.parse(jsonMatch[0]);\n  } else {\n    // Sometimes agent returns just the array\n    products = JSON.parse(rawResponse);\n  }\n} catch (e) {\n  products = [];\n  // Fail gracefully or log\n}\n\n// Enrich products with category info and search prompts\nif (Array.isArray(products)) {\n    products = products.map((p, i) => ({\n      ...p,\n      category: configData.category,\n      categoryConfig: configData.config,\n      searchPrompt: `${p.productName} ${p.model || ''} review specs`.trim(),\n      order: i + 1\n    }));\n}\n\nreturn {\n  category: configData.category,\n  categoryDisplay: configData.config.displayName,\n  totalProducts: Array.isArray(products) ? products.length : 0,\n  products: Array.isArray(products) ? products.slice(0, configData.limit) : []\n};"
             },
             "id": "code-parse",
             "name": "Parse Products",
             "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
             "position": [
-                1000,
+                1100,
                 300
             ]
         },
@@ -112,26 +121,29 @@
             "id": "split-products",
             "name": "Split Into Batches",
             "type": "n8n-nodes-base.splitInBatches",
+            "typeVersion": 2,
             "position": [
-                1200,
+                1300,
                 300
             ]
         },
         {
             "parameters": {
-                "jsCode": "// Prepare single product for sub-workflow\nconst batchData = $input.first().json;\nconst products = batchData.products || [batchData];\nconst product = products[0];\n\nif (!product || !product.productName) {\n  return { skip: true };\n}\n\nreturn {\n  productName: product.productName,\n  model: product.model,\n  vendor: product.vendor,\n  category: product.category,\n  releaseDate: product.releaseDate,\n  specs: product.specs || {},\n  searchPrompt: product.searchPrompt\n};"
+                "jsCode": "// Prepare single product for sub-workflow\nconst batchData = $input.first().json;\n// Handle both array/single item cases from Split node\nconst product = batchData.products ? batchData.products[0] : batchData;\n\nif (!product || !product.productName) {\n  return { skip: true };\n}\n\nreturn {\n  productName: product.productName,\n  model: product.model,\n  vendor: product.vendor,\n  category: product.category,\n  releaseDate: product.releaseDate,\n  specs: product.specs || {},\n  searchPrompt: product.searchPrompt\n};"
             },
             "id": "code-prepare-product",
             "name": "Prepare Product Data",
             "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
             "position": [
-                1400,
+                1500,
                 300
             ]
         },
         {
             "parameters": {
                 "url": "http://localhost:5678/webhook/research-product",
+                "method": "POST",
                 "sendBody": true,
                 "specifyBody": "json",
                 "jsonBody": "={{ JSON.stringify($json) }}",
@@ -142,8 +154,9 @@
             "id": "call-research",
             "name": "Call Product Research",
             "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
             "position": [
-                1600,
+                1700,
                 200
             ],
             "disabled": true
@@ -151,6 +164,7 @@
         {
             "parameters": {
                 "url": "http://localhost:5678/webhook/aggregate-reviews",
+                "method": "POST",
                 "sendBody": true,
                 "specifyBody": "json",
                 "jsonBody": "={{ JSON.stringify($json) }}",
@@ -161,8 +175,9 @@
             "id": "call-aggregator",
             "name": "Call Review Aggregator",
             "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
             "position": [
-                1600,
+                1700,
                 400
             ],
             "disabled": true
@@ -170,6 +185,7 @@
         {
             "parameters": {
                 "url": "http://localhost:5678/webhook/get-affiliate-links",
+                "method": "POST",
                 "sendBody": true,
                 "specifyBody": "json",
                 "jsonBody": "={{ JSON.stringify($json) }}",
@@ -180,8 +196,9 @@
             "id": "call-affiliate",
             "name": "Call Affiliate Links",
             "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
             "position": [
-                1800,
+                1900,
                 300
             ],
             "disabled": true
@@ -194,8 +211,9 @@
             "id": "respond",
             "name": "Respond",
             "type": "n8n-nodes-base.respondToWebhook",
+            "typeVersion": 1,
             "position": [
-                2000,
+                2100,
                 300
             ]
         }
@@ -227,14 +245,25 @@
             "main": [
                 [
                     {
-                        "node": "GPT-4 Extract Products",
+                        "node": "AI Agent",
                         "type": "main",
                         "index": 0
                     }
                 ]
             ]
         },
-        "GPT-4 Extract Products": {
+        "OpenAI Chat Model": {
+            "ai_languageModel": [
+                [
+                    {
+                        "node": "AI Agent",
+                        "type": "ai_languageModel",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "AI Agent": {
             "main": [
                 [
                     {

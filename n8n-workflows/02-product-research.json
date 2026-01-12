@@ -11,6 +11,7 @@
             "id": "webhook-1",
             "name": "Webhook",
             "type": "n8n-nodes-base.webhook",
+            "typeVersion": 2,
             "position": [
                 200,
                 300
@@ -24,14 +25,16 @@
             "id": "code-prepare",
             "name": "Prepare Research",
             "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
             "position": [
-                400,
+                420,
                 300
             ]
         },
         {
             "parameters": {
                 "url": "https://google.serper.dev/search",
+                "method": "POST",
                 "sendHeaders": true,
                 "headerParameters": {
                     "parameters": [
@@ -53,14 +56,16 @@
             "id": "search-official",
             "name": "Search Official Specs",
             "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
             "position": [
-                650,
+                660,
                 100
             ]
         },
         {
             "parameters": {
                 "url": "https://google.serper.dev/search",
+                "method": "POST",
                 "sendHeaders": true,
                 "headerParameters": {
                     "parameters": [
@@ -82,14 +87,16 @@
             "id": "search-expert",
             "name": "Search Expert Reviews",
             "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
             "position": [
-                650,
+                660,
                 300
             ]
         },
         {
             "parameters": {
                 "url": "https://google.serper.dev/search",
+                "method": "POST",
                 "sendHeaders": true,
                 "headerParameters": {
                     "parameters": [
@@ -111,8 +118,9 @@
             "id": "search-reddit",
             "name": "Search Reddit Discussions",
             "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
             "position": [
-                650,
+                660,
                 500
             ]
         },
@@ -125,6 +133,7 @@
             "id": "merge-results",
             "name": "Merge Results",
             "type": "n8n-nodes-base.merge",
+            "typeVersion": 3,
             "position": [
                 900,
                 300
@@ -132,11 +141,12 @@
         },
         {
             "parameters": {
-                "jsCode": "// Process all search results\nconst items = $input.all();\nconst productData = $('Prepare Research').first().json;\n\n// Helper to find results by query pattern\nfunction findResults(items, pattern) {\n  const item = items.find(i => {\n    const q = i.json?.searchParameters?.q || '';\n    return q.includes(pattern);\n  });\n  return item?.json?.organic || [];\n}\n\n// Process official specs results\nconst officialResults = findResults(items, 'official specifications');\nconst officialSpecs = officialResults.map(r => ({\n  title: r.title,\n  snippet: r.snippet,\n  url: r.link,\n  source: new URL(r.link).hostname.replace('www.', '')\n}));\n\n// Process expert review results\nconst expertResults = findResults(items, productData.expertSources[0]);\nconst expertReviews = expertResults.map(r => {\n  const hostname = new URL(r.link).hostname.replace('www.', '');\n  return {\n    source: hostname,\n    title: r.title,\n    snippet: r.snippet,\n    url: r.link,\n    isExpertSite: productData.expertSources.some(s => hostname.includes(s))\n  };\n}).filter(r => r.isExpertSite);\n\n// Process Reddit discussions\nconst redditResults = findResults(items, 'reddit.com');\nconst discussions = redditResults.map(r => {\n  // Extract subreddit from URL\n  const match = r.link.match(/reddit\\.com\\/r\\/([^\\/]+)/);\n  return {\n    subreddit: match ? match[1] : 'unknown',\n    title: r.title,\n    snippet: r.snippet,\n    url: r.link\n  };\n});\n\nreturn {\n  product: {\n    name: productData.productName,\n    model: productData.model,\n    vendor: productData.vendor,\n    category: productData.category,\n    releaseDate: productData.releaseDate\n  },\n  inputSpecs: productData.specs,\n  officialSpecsSources: officialSpecs.slice(0, 3),\n  expertReviews: expertReviews.slice(0, 5),\n  discussions: discussions.slice(0, 5),\n  researchedAt: new Date().toISOString()\n};"
+                "jsCode": "// Process all search results\nconst items = $input.all();\nconst productData = $('Prepare Research').first().json;\n\n// Helper to find results by query pattern\nfunction findResults(items, pattern) {\n  const found = items.find(i => {\n    const q = i.json?.searchParameters?.q || '';\n    // Handle both cases where q might be undefined\n    return q && q.includes(pattern);\n  });\n  return found?.json?.organic || [];\n}\n\n// Process official specs results\nconst officialResults = findResults(items, 'official specifications');\nconst officialSpecs = officialResults.map(r => ({\n  title: r.title,\n  snippet: r.snippet,\n  url: r.link,\n  source: new URL(r.link).hostname.replace('www.', '')\n}));\n\n// Process expert review results\nconst expertResults = findResults(items, productData.expertSources[0]);\nconst expertReviews = expertResults.map(r => {\n  const hostname = new URL(r.link).hostname.replace('www.', '');\n  return {\n    source: hostname,\n    title: r.title,\n    snippet: r.snippet,\n    url: r.link,\n    isExpertSite: productData.expertSources.some(s => hostname.includes(s))\n  };\n}).filter(r => r.isExpertSite);\n\n// Process Reddit discussions\nconst redditResults = findResults(items, 'reddit.com');\nconst discussions = redditResults.map(r => {\n  // Extract subreddit from URL\n  const match = r.link.match(/reddit\\.com\\/r\\/([^\\/]+)/);\n  return {\n    subreddit: match ? match[1] : 'unknown',\n    title: r.title,\n    snippet: r.snippet,\n    url: r.link\n  };\n});\n\nreturn {\n  product: {\n    name: productData.productName,\n    model: productData.model,\n    vendor: productData.vendor,\n    category: productData.category,\n    releaseDate: productData.releaseDate\n  },\n  inputSpecs: productData.specs,\n  officialSpecsSources: officialSpecs.slice(0, 3),\n  expertReviews: expertReviews.slice(0, 5),\n  discussions: discussions.slice(0, 5),\n  researchedAt: new Date().toISOString()\n};"
             },
             "id": "code-process",
             "name": "Process Research Results",
             "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
             "position": [
                 1100,
                 300
@@ -146,28 +156,16 @@
             "parameters": {
                 "model": "gpt-4o-mini",
                 "options": {
-                    "temperature": 0.3,
-                    "maxTokens": 2000
-                },
-                "messages": {
-                    "values": [
-                        {
-                            "role": "system",
-                            "content": "You are a product research specialist. Extract and verify technical specifications, key features, and notable information from search results. Be accurate and cite sources."
-                        },
-                        {
-                            "role": "user",
-                            "content": "=Research {{ $json.product.name }} ({{ $json.product.model }}) by {{ $json.product.vendor }}\n\n**Known Specs (verify and enrich):**\n{{ JSON.stringify($json.inputSpecs, null, 2) }}\n\n**Official Sources Found:**\n{{ JSON.stringify($json.officialSpecsSources, null, 2) }}\n\n**Expert Reviews:**\n{{ JSON.stringify($json.expertReviews, null, 2) }}\n\n**Community Discussions:**\n{{ JSON.stringify($json.discussions, null, 2) }}\n\nExtract and return JSON:\n{\n  \"verifiedSpecs\": {\n    // All key specifications, verified from official sources where possible\n  },\n  \"keyFeatures\": [\"feature1\", \"feature2\"],\n  \"expertHighlights\": [\n    { \"source\": \"rtings.com\", \"keyPoints\": [\"point1\", \"point2\"], \"score\": \"8.5/10\" }\n  ],\n  \"communityInsights\": {\n    \"positives\": [\"what users love\"],\n    \"concerns\": [\"what users complain about\"],\n    \"tips\": [\"useful user tips\"]\n  },\n  \"competitors\": [\"competitor1\", \"competitor2\"]\n}"
-                        }
-                    ]
+                    "temperature": 0.3
                 }
             },
-            "id": "gpt4-research",
-            "name": "GPT-4 Deep Research",
-            "type": "@n8n/n8n-nodes-langchain.openAi",
+            "id": "openai-chat-model",
+            "name": "OpenAI Chat Model",
+            "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+            "typeVersion": 1,
             "position": [
-                1300,
-                300
+                1240,
+                520
             ],
             "credentials": {
                 "openAiApi": {
@@ -178,13 +176,30 @@
         },
         {
             "parameters": {
-                "jsCode": "// Parse GPT-4 research and combine all data\nconst rawResponse = $input.first().json.text || $input.first().json.message?.content || '';\nconst researchData = $('Process Research Results').first().json;\n\nlet enrichedData;\ntry {\n  const jsonMatch = rawResponse.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    enrichedData = JSON.parse(jsonMatch[0]);\n  } else {\n    throw new Error('No JSON found');\n  }\n} catch (e) {\n  enrichedData = {\n    verifiedSpecs: researchData.inputSpecs,\n    keyFeatures: [],\n    expertHighlights: [],\n    communityInsights: { positives: [], concerns: [], tips: [] },\n    competitors: []\n  };\n}\n\nreturn {\n  product: researchData.product,\n  specs: enrichedData.verifiedSpecs,\n  keyFeatures: enrichedData.keyFeatures,\n  expertReviews: enrichedData.expertHighlights,\n  communityInsights: enrichedData.communityInsights,\n  competitors: enrichedData.competitors,\n  sources: {\n    official: researchData.officialSpecsSources,\n    expert: researchData.expertReviews,\n    community: researchData.discussions\n  },\n  researchedAt: researchData.researchedAt\n};"
+                "text": "=Research {{ $json.product.name }} ({{ $json.product.model }}) by {{ $json.product.vendor }}\n\n**Known Specs (verify and enrich):**\n{{ JSON.stringify($json.inputSpecs, null, 2) }}\n\n**Official Sources Found:**\n{{ JSON.stringify($json.officialSpecsSources, null, 2) }}\n\n**Expert Reviews:**\n{{ JSON.stringify($json.expertReviews, null, 2) }}\n\n**Community Discussions:**\n{{ JSON.stringify($json.discussions, null, 2) }}\n\nExtract and return JSON:\n{\n  \"verifiedSpecs\": {\n    // All key specifications, verified from official sources where possible\n  },\n  \"keyFeatures\": [\"feature1\", \"feature2\"],\n  \"expertHighlights\": [\n    { \"source\": \"rtings.com\", \"keyPoints\": [\"point1\", \"point2\"], \"score\": \"8.5/10\" }\n  ],\n  \"communityInsights\": {\n    \"positives\": [\"what users love\"],\n    \"concerns\": [\"what users complain about\"],\n    \"tips\": [\"useful user tips\"]\n  },\n  \"competitors\": [\"competitor1\", \"competitor2\"]\n}",
+                "options": {
+                    "systemMessage": "You are a product research specialist. Extract and verify technical specifications, key features, and notable information from search results. Be accurate and cite sources. You MUST return valid JSON."
+                }
+            },
+            "id": "ai-agent",
+            "name": "AI Agent",
+            "type": "@n8n/n8n-nodes-langchain.agent",
+            "typeVersion": 1.6,
+            "position": [
+                1340,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "// Parse Agent research and combine all data\nconst rawResponse = $input.first().json.output || $input.first().json.text || $input.first().json.message?.content || '';\nconst researchData = $('Process Research Results').first().json;\n\nlet enrichedData;\ntry {\n  const jsonMatch = rawResponse.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    enrichedData = JSON.parse(jsonMatch[0]);\n  } else {\n    throw new Error('No JSON found');\n  }\n} catch (e) {\n  enrichedData = {\n    verifiedSpecs: researchData.inputSpecs,\n    keyFeatures: [],\n    expertHighlights: [],\n    communityInsights: { positives: [], concerns: [], tips: [] },\n    competitors: []\n  };\n}\n\nreturn {\n  product: researchData.product,\n  specs: enrichedData.verifiedSpecs,\n  keyFeatures: enrichedData.keyFeatures,\n  expertReviews: enrichedData.expertHighlights,\n  communityInsights: enrichedData.communityInsights,\n  competitors: enrichedData.competitors,\n  sources: {\n    official: researchData.officialSpecsSources,\n    expert: researchData.expertReviews,\n    community: researchData.discussions\n  },\n  researchedAt: researchData.researchedAt\n};"
             },
             "id": "code-format",
             "name": "Format Output",
             "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
             "position": [
-                1500,
+                1600,
                 300
             ]
         },
@@ -196,8 +211,9 @@
             "id": "respond",
             "name": "Respond",
             "type": "n8n-nodes-base.respondToWebhook",
+            "typeVersion": 1,
             "position": [
-                1700,
+                1800,
                 300
             ]
         }
@@ -283,14 +299,25 @@
             "main": [
                 [
                     {
-                        "node": "GPT-4 Deep Research",
+                        "node": "AI Agent",
                         "type": "main",
                         "index": 0
                     }
                 ]
             ]
         },
-        "GPT-4 Deep Research": {
+        "OpenAI Chat Model": {
+            "ai_languageModel": [
+                [
+                    {
+                        "node": "AI Agent",
+                        "type": "ai_languageModel",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "AI Agent": {
             "main": [
                 [
                     {

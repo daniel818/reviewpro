@@ -11,6 +11,7 @@
             "id": "webhook-1",
             "name": "Webhook",
             "type": "n8n-nodes-base.webhook",
+            "typeVersion": 2,
             "position": [
                 200,
                 300
@@ -24,14 +25,16 @@
             "id": "code-prepare",
             "name": "Prepare Search",
             "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
             "position": [
-                400,
+                420,
                 300
             ]
         },
         {
             "parameters": {
                 "url": "https://google.serper.dev/search",
+                "method": "POST",
                 "sendHeaders": true,
                 "headerParameters": {
                     "parameters": [
@@ -53,14 +56,16 @@
             "id": "search-amazon-reviews",
             "name": "Search Amazon Reviews",
             "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
             "position": [
-                650,
+                660,
                 100
             ]
         },
         {
             "parameters": {
                 "url": "https://www.googleapis.com/youtube/v3/search",
+                "method": "GET",
                 "qs": {
                     "part": "snippet",
                     "q": "={{ $json.searchQuery }} review -unboxing -shorts",
@@ -74,14 +79,16 @@
             "id": "search-youtube",
             "name": "Search YouTube Reviews",
             "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
             "position": [
-                650,
+                660,
                 300
             ]
         },
         {
             "parameters": {
                 "url": "https://google.serper.dev/search",
+                "method": "POST",
                 "sendHeaders": true,
                 "headerParameters": {
                     "parameters": [
@@ -103,8 +110,9 @@
             "id": "search-articles",
             "name": "Search Article Reviews",
             "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
             "position": [
-                650,
+                660,
                 500
             ]
         },
@@ -117,6 +125,7 @@
             "id": "merge-results",
             "name": "Merge All Results",
             "type": "n8n-nodes-base.merge",
+            "typeVersion": 3,
             "position": [
                 900,
                 300
@@ -124,11 +133,12 @@
         },
         {
             "parameters": {
-                "jsCode": "// Process and structure all review sources\nconst items = $input.all();\nconst prepareData = $('Prepare Search').first().json;\n\n// Helper to safely get items\nfunction safeGet(items, identifier) {\n  return items.find(i => {\n    const q = i.json?.searchParameters?.q || '';\n    return q.includes(identifier);\n  })?.json || {};\n}\n\n// Process Amazon reviews from Serper results\nconst amazonResults = safeGet(items, 'amazon.com');\nconst amazonReviews = (amazonResults.organic || []).map(r => ({\n  title: r.title,\n  snippet: r.snippet,\n  url: r.link\n}));\n\n// Process YouTube results\nconst youtubeResults = items.find(i => i.json?.items)?.json || {};\nconst youtubeReviews = (youtubeResults.items || []).map(v => ({\n  videoId: v.id?.videoId,\n  title: v.snippet?.title,\n  channel: v.snippet?.channelTitle,\n  description: v.snippet?.description,\n  thumbnail: v.snippet?.thumbnails?.high?.url,\n  publishedAt: v.snippet?.publishedAt,\n  url: `https://youtube.com/watch?v=${v.id?.videoId}`\n}));\n\n// Process Article reviews from expert sites\nconst articleResults = safeGet(items, 'rtings.com');\nconst articleReviews = (articleResults.organic || []).map(r => ({\n  source: new URL(r.link).hostname.replace('www.', ''),\n  title: r.title,\n  snippet: r.snippet,\n  url: r.link\n}));\n\nreturn {\n  productName: prepareData.productName,\n  model: prepareData.model,\n  vendor: prepareData.vendor,\n  category: prepareData.category,\n  customerReviews: {\n    source: 'Amazon',\n    reviews: amazonReviews,\n    totalFound: amazonReviews.length\n  },\n  youtubeReviews: {\n    totalFound: youtubeReviews.length,\n    videos: youtubeReviews.slice(0, 5) // Top 5 videos\n  },\n  articleReviews: {\n    totalFound: articleReviews.length,\n    articles: articleReviews\n  },\n  aggregatedAt: new Date().toISOString()\n};"
+                "jsCode": "// Process and structure all review sources\nconst items = $input.all();\nconst prepareData = $('Prepare Search').first().json;\n\n// Helper to safely get items\nfunction safeGet(items, identifier) {\n  const found = items.find(i => {\n    const q = i.json?.searchParameters?.q || '';\n    // Handle both cases where q might be undefined\n    return q && q.includes(identifier);\n  });\n  return found?.json || {};\n}\n\n// Process Amazon reviews from Serper results\nconst amazonResults = safeGet(items, 'amazon.com');\nconst amazonReviews = (amazonResults.organic || []).map(r => ({\n  title: r.title,\n  snippet: r.snippet,\n  url: r.link\n}));\n\n// Process YouTube results\n// The YouTube node output structure depends on the API response\nconst youtubeItem = items.find(i => i.json?.kind === 'youtube#searchListResponse');\nconst youtubeResults = youtubeItem ? youtubeItem.json : {};\nconst youtubeReviews = (youtubeResults.items || []).map(v => ({\n  videoId: v.id?.videoId,\n  title: v.snippet?.title,\n  channel: v.snippet?.channelTitle,\n  description: v.snippet?.description,\n  thumbnail: v.snippet?.thumbnails?.high?.url,\n  publishedAt: v.snippet?.publishedAt,\n  url: `https://youtube.com/watch?v=${v.id?.videoId}`\n}));\n\n// Process Article reviews from expert sites\nconst articleResults = safeGet(items, 'rtings.com');\nconst articleReviews = (articleResults.organic || []).map(r => ({\n  source: new URL(r.link).hostname.replace('www.', ''),\n  title: r.title,\n  snippet: r.snippet,\n  url: r.link\n}));\n\nreturn {\n  productName: prepareData.productName,\n  model: prepareData.model,\n  vendor: prepareData.vendor,\n  category: prepareData.category,\n  customerReviews: {\n    source: 'Amazon',\n    reviews: amazonReviews,\n    totalFound: amazonReviews.length\n  },\n  youtubeReviews: {\n    totalFound: youtubeReviews.length,\n    videos: youtubeReviews.slice(0, 5) // Top 5 videos\n  },\n  articleReviews: {\n    totalFound: articleReviews.length,\n    articles: articleReviews\n  },\n  aggregatedAt: new Date().toISOString()\n};"
             },
             "id": "code-process",
             "name": "Process All Reviews",
             "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
             "position": [
                 1100,
                 300
@@ -138,28 +148,16 @@
             "parameters": {
                 "model": "gpt-4o-mini",
                 "options": {
-                    "temperature": 0.5,
-                    "maxTokens": 1500
-                },
-                "messages": {
-                    "values": [
-                        {
-                            "role": "system",
-                            "content": "You are an expert at analyzing and synthesizing product reviews from multiple sources. Extract key insights, common themes, and provide balanced analysis."
-                        },
-                        {
-                            "role": "user",
-                            "content": "=Analyze these reviews for {{ $json.productName }}:\n\n**Customer Reviews (Amazon):**\n{{ JSON.stringify($json.customerReviews.reviews.slice(0, 5), null, 2) }}\n\n**YouTube Reviews:**\n{{ JSON.stringify($json.youtubeReviews.videos, null, 2) }}\n\n**Expert Article Reviews:**\n{{ JSON.stringify($json.articleReviews.articles, null, 2) }}\n\nProvide a JSON analysis:\n{\n  \"customerSentiment\": {\n    \"overall\": \"positive/mixed/negative\",\n    \"commonPraise\": [\"thing1\", \"thing2\"],\n    \"commonComplaints\": [\"thing1\", \"thing2\"]\n  },\n  \"expertConsensus\": {\n    \"strengths\": [\"point1\", \"point2\"],\n    \"weaknesses\": [\"point1\", \"point2\"],\n    \"recommendations\": \"summary of who this is best for\"\n  },\n  \"youtubeHighlights\": {\n    \"mostMentioned\": [\"feature1\", \"feature2\"],\n    \"concerns\": [\"concern1\", \"concern2\"]\n  },\n  \"overallVerdict\": \"2-3 sentence summary combining all sources\"\n}"
-                        }
-                    ]
+                    "temperature": 0.5
                 }
             },
-            "id": "gpt4-analyze",
-            "name": "GPT-4 Analyze Reviews",
-            "type": "@n8n/n8n-nodes-langchain.openAi",
+            "id": "openai-chat-model",
+            "name": "OpenAI Chat Model",
+            "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+            "typeVersion": 1,
             "position": [
-                1300,
-                300
+                1250,
+                520
             ],
             "credentials": {
                 "openAiApi": {
@@ -170,13 +168,30 @@
         },
         {
             "parameters": {
-                "jsCode": "// Parse GPT-4 analysis and combine with raw data\nconst rawResponse = $input.first().json.text || $input.first().json.message?.content || '';\nconst reviewData = $('Process All Reviews').first().json;\n\nlet analysis;\ntry {\n  const jsonMatch = rawResponse.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    analysis = JSON.parse(jsonMatch[0]);\n  } else {\n    throw new Error('No JSON found');\n  }\n} catch (e) {\n  analysis = {\n    customerSentiment: { overall: 'unknown', commonPraise: [], commonComplaints: [] },\n    expertConsensus: { strengths: [], weaknesses: [], recommendations: '' },\n    youtubeHighlights: { mostMentioned: [], concerns: [] },\n    overallVerdict: rawResponse\n  };\n}\n\nreturn {\n  ...reviewData,\n  analysis\n};"
+                "text": "=Analyze these reviews for {{ $json.productName }}:\n\n**Customer Reviews (Amazon):**\n{{ JSON.stringify($json.customerReviews.reviews.slice(0, 5), null, 2) }}\n\n**YouTube Reviews:**\n{{ JSON.stringify($json.youtubeReviews.videos, null, 2) }}\n\n**Expert Article Reviews:**\n{{ JSON.stringify($json.articleReviews.articles, null, 2) }}\n\nProvide a JSON analysis:\n{\n  \"customerSentiment\": {\n    \"overall\": \"positive/mixed/negative\",\n    \"commonPraise\": [\"thing1\", \"thing2\"],\n    \"commonComplaints\": [\"thing1\", \"thing2\"]\n  },\n  \"expertConsensus\": {\n    \"strengths\": [\"point1\", \"point2\"],\n    \"weaknesses\": [\"point1\", \"point2\"],\n    \"recommendations\": \"summary of who this is best for\"\n  },\n  \"youtubeHighlights\": {\n    \"mostMentioned\": [\"feature1\", \"feature2\"],\n    \"concerns\": [\"concern1\", \"concern2\"]\n  },\n  \"overallVerdict\": \"2-3 sentence summary combining all sources\"\n}",
+                "options": {
+                    "systemMessage": "You are an expert at analyzing and synthesizing product reviews from multiple sources. Extract key insights, common themes, and provide balanced analysis. You MUST return valid JSON."
+                }
+            },
+            "id": "ai-agent",
+            "name": "AI Agent",
+            "type": "@n8n/n8n-nodes-langchain.agent",
+            "typeVersion": 1.6,
+            "position": [
+                1350,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "// Parse AI Agent analysis and combine with raw data\nconst rawResponse = $input.first().json.output || $input.first().json.text || $input.first().json.message?.content || '';\nconst reviewData = $('Process All Reviews').first().json;\n\nlet analysis;\ntry {\n  const jsonMatch = rawResponse.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    analysis = JSON.parse(jsonMatch[0]);\n  } else {\n    throw new Error('No JSON found');\n  }\n} catch (e) {\n  analysis = {\n    customerSentiment: { overall: 'unknown', commonPraise: [], commonComplaints: [] },\n    expertConsensus: { strengths: [], weaknesses: [], recommendations: '' },\n    youtubeHighlights: { mostMentioned: [], concerns: [] },\n    overallVerdict: rawResponse\n  };\n}\n\nreturn {\n  ...reviewData,\n  analysis\n};"
             },
             "id": "code-format",
             "name": "Format Output",
             "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
             "position": [
-                1500,
+                1600,
                 300
             ]
         },
@@ -188,8 +203,9 @@
             "id": "respond",
             "name": "Respond",
             "type": "n8n-nodes-base.respondToWebhook",
+            "typeVersion": 1,
             "position": [
-                1700,
+                1800,
                 300
             ]
         }
@@ -275,14 +291,25 @@
             "main": [
                 [
                     {
-                        "node": "GPT-4 Analyze Reviews",
+                        "node": "AI Agent",
                         "type": "main",
                         "index": 0
                     }
                 ]
             ]
         },
-        "GPT-4 Analyze Reviews": {
+        "OpenAI Chat Model": {
+            "ai_languageModel": [
+                [
+                    {
+                        "node": "AI Agent",
+                        "type": "ai_languageModel",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "AI Agent": {
             "main": [
                 [
                     {

@@ -11,6 +11,7 @@
             "id": "webhook-1",
             "name": "Webhook",
             "type": "n8n-nodes-base.webhook",
+            "typeVersion": 2,
             "position": [
                 200,
                 300
@@ -24,8 +25,9 @@
             "id": "code-prepare",
             "name": "Prepare Comparison",
             "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
             "position": [
-                400,
+                420,
                 300
             ]
         },
@@ -33,28 +35,16 @@
             "parameters": {
                 "model": "gpt-4o",
                 "options": {
-                    "temperature": 0.5,
-                    "maxTokens": 4000
-                },
-                "messages": {
-                    "values": [
-                        {
-                            "role": "system",
-                            "content": "You are a product comparison expert. Create detailed, unbiased comparisons that help consumers make informed decisions. Focus on practical differences and clear recommendations."
-                        },
-                        {
-                            "role": "user",
-                            "content": "=Create a comprehensive comparison for these {{ $json.category }} products:\n\n{{ JSON.stringify($json.products, null, 2) }}\n\nFocus areas: {{ $json.focusAreas.join(', ') }}\n\nGenerate a JSON comparison:\n{\n  \"category\": \"{{ $json.category }}\",\n  \"comparisonTable\": {\n    \"headers\": [\"Feature\", \"Product1\", \"Product2\", ...],\n    \"rows\": [\n      [\"Price\", \"$999\", \"$1199\", ...],\n      [\"Overall Score\", \"88\", \"92\", ...],\n      // Key differentiating specs...\n    ]\n  },\n  \"rankings\": {\n    \"bestOverall\": {\n      \"product\": \"Product Name\",\n      \"reason\": \"Why it's the best overall choice\"\n    },\n    \"bestValue\": {\n      \"product\": \"Product Name\",\n      \"reason\": \"Why it offers the best value\"\n    },\n    \"bestPerformance\": {\n      \"product\": \"Product Name\",\n      \"reason\": \"Why it has the best performance\"\n    },\n    \"bestFor\": [\n      { \"useCase\": \"Gaming\", \"product\": \"Product Name\", \"reason\": \"...\" },\n      { \"useCase\": \"Movies\", \"product\": \"Product Name\", \"reason\": \"...\" },\n      { \"useCase\": \"Budget\", \"product\": \"Product Name\", \"reason\": \"...\" }\n    ]\n  },\n  \"keyDifferences\": [\n    {\n      \"aspect\": \"Picture Quality\",\n      \"summary\": \"How products differ in this aspect\",\n      \"winner\": \"Product Name\"\n    }\n  ],\n  \"avoidProducts\": [\n    {\n      \"product\": \"Product Name\",\n      \"reason\": \"Why to avoid unless specific condition\"\n    }\n  ],\n  \"quickVerdict\": \"2-3 sentence summary for quick decision making\"\n}"
-                        }
-                    ]
+                    "temperature": 0.5
                 }
             },
-            "id": "gpt4-compare",
-            "name": "GPT-4 Generate Comparison",
-            "type": "@n8n/n8n-nodes-langchain.openAi",
+            "id": "openai-chat-model",
+            "name": "OpenAI Chat Model",
+            "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+            "typeVersion": 1,
             "position": [
-                600,
-                300
+                580,
+                520
             ],
             "credentials": {
                 "openAiApi": {
@@ -65,13 +55,30 @@
         },
         {
             "parameters": {
-                "jsCode": "// Parse comparison results\nconst rawResponse = $input.first().json.text || $input.first().json.message?.content || '';\nconst inputData = $('Prepare Comparison').first().json;\n\nlet comparison;\ntry {\n  const jsonMatch = rawResponse.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    comparison = JSON.parse(jsonMatch[0]);\n  } else {\n    throw new Error('No JSON found');\n  }\n} catch (e) {\n  comparison = {\n    category: inputData.category,\n    comparisonTable: { headers: [], rows: [] },\n    rankings: {},\n    keyDifferences: [],\n    avoidProducts: [],\n    quickVerdict: rawResponse\n  };\n}\n\nreturn {\n  ...comparison,\n  productCount: inputData.products.length,\n  generatedAt: new Date().toISOString()\n};"
+                "text": "=Create a comprehensive comparison for these {{ $json.category }} products:\n\n{{ JSON.stringify($json.products, null, 2) }}\n\nFocus areas: {{ $json.focusAreas.join(', ') }}\n\nGenerate a JSON comparison:\n{\n  \"category\": \"{{ $json.category }}\",\n  \"comparisonTable\": {\n    \"headers\": [\"Feature\", \"Product1\", \"Product2\", ...],\n    \"rows\": [\n      [\"Price\", \"$999\", \"$1199\", ...],\n      [\"Overall Score\", \"88\", \"92\", ...],\n      // Key differentiating specs...\n    ]\n  },\n  \"rankings\": {\n    \"bestOverall\": {\n      \"product\": \"Product Name\",\n      \"reason\": \"Why it's the best overall choice\"\n    },\n    \"bestValue\": {\n      \"product\": \"Product Name\",\n      \"reason\": \"Why it offers the best value\"\n    },\n    \"bestPerformance\": {\n      \"product\": \"Product Name\",\n      \"reason\": \"Why it has the best performance\"\n    },\n    \"bestFor\": [\n      { \"useCase\": \"Gaming\", \"product\": \"Product Name\", \"reason\": \"...\" },\n      { \"useCase\": \"Movies\", \"product\": \"Product Name\", \"reason\": \"...\" },\n      { \"useCase\": \"Budget\", \"product\": \"Product Name\", \"reason\": \"...\" }\n    ]\n  },\n  \"keyDifferences\": [\n    {\n      \"aspect\": \"Picture Quality\",\n      \"summary\": \"How products differ in this aspect\",\n      \"winner\": \"Product Name\"\n    }\n  ],\n  \"avoidProducts\": [\n    {\n      \"product\": \"Product Name\",\n      \"reason\": \"Why to avoid unless specific condition\"\n    }\n  ],\n  \"quickVerdict\": \"2-3 sentence summary for quick decision making\"\n}",
+                "options": {
+                    "systemMessage": "You are a product comparison expert. Create detailed, unbiased comparisons that help consumers make informed decisions. Focus on practical differences and clear recommendations. You MUST return valid JSON."
+                }
+            },
+            "id": "ai-agent",
+            "name": "AI Agent",
+            "type": "@n8n/n8n-nodes-langchain.agent",
+            "typeVersion": 1.6,
+            "position": [
+                660,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "// Parse comparison results\nconst rawResponse = $input.first().json.output || $input.first().json.text || $input.first().json.message?.content || '';\nconst inputData = $('Prepare Comparison').first().json;\n\nlet comparison;\ntry {\n  const jsonMatch = rawResponse.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    comparison = JSON.parse(jsonMatch[0]);\n  } else {\n    throw new Error('No JSON found');\n  }\n} catch (e) {\n  comparison = {\n    category: inputData.category,\n    comparisonTable: { headers: [], rows: [] },\n    rankings: {},\n    keyDifferences: [],\n    avoidProducts: [],\n    quickVerdict: rawResponse\n  };\n}\n\nreturn {\n  ...comparison,\n  productCount: inputData.products.length,\n  generatedAt: new Date().toISOString()\n};"
             },
             "id": "code-parse",
             "name": "Parse Comparison",
             "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
             "position": [
-                800,
+                900,
                 300
             ]
         },
@@ -87,8 +94,9 @@
             "id": "save-comparison",
             "name": "Save to Supabase",
             "type": "n8n-nodes-base.supabase",
+            "typeVersion": 1,
             "position": [
-                1000,
+                1100,
                 200
             ],
             "disabled": true
@@ -101,8 +109,9 @@
             "id": "respond",
             "name": "Respond",
             "type": "n8n-nodes-base.respondToWebhook",
+            "typeVersion": 1,
             "position": [
-                1200,
+                1300,
                 300
             ]
         }
@@ -123,14 +132,25 @@
             "main": [
                 [
                     {
-                        "node": "GPT-4 Generate Comparison",
+                        "node": "AI Agent",
                         "type": "main",
                         "index": 0
                     }
                 ]
             ]
         },
-        "GPT-4 Generate Comparison": {
+        "OpenAI Chat Model": {
+            "ai_languageModel": [
+                [
+                    {
+                        "node": "AI Agent",
+                        "type": "ai_languageModel",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "AI Agent": {
             "main": [
                 [
                     {

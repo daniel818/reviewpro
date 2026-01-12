@@ -11,6 +11,7 @@
             "id": "webhook-1",
             "name": "Webhook",
             "type": "n8n-nodes-base.webhook",
+            "typeVersion": 2,
             "position": [
                 200,
                 300
@@ -24,14 +25,16 @@
             "id": "code-prepare",
             "name": "Prepare Search Queries",
             "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
             "position": [
-                400,
+                420,
                 300
             ]
         },
         {
             "parameters": {
                 "url": "https://google.serper.dev/shopping",
+                "method": "POST",
                 "sendHeaders": true,
                 "headerParameters": {
                     "parameters": [
@@ -53,20 +56,16 @@
             "id": "search-amazon",
             "name": "Search Amazon",
             "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
             "position": [
-                650,
+                660,
                 100
-            ],
-            "credentials": {
-                "httpHeaderAuth": {
-                    "id": "serper-api",
-                    "name": "Serper API"
-                }
-            }
+            ]
         },
         {
             "parameters": {
                 "url": "https://google.serper.dev/shopping",
+                "method": "POST",
                 "sendHeaders": true,
                 "headerParameters": {
                     "parameters": [
@@ -88,20 +87,16 @@
             "id": "search-bestbuy",
             "name": "Search Best Buy",
             "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
             "position": [
-                650,
+                660,
                 250
-            ],
-            "credentials": {
-                "httpHeaderAuth": {
-                    "id": "serper-api",
-                    "name": "Serper API"
-                }
-            }
+            ]
         },
         {
             "parameters": {
                 "url": "https://google.serper.dev/shopping",
+                "method": "POST",
                 "sendHeaders": true,
                 "headerParameters": {
                     "parameters": [
@@ -123,20 +118,16 @@
             "id": "search-bh",
             "name": "Search B&H Photo",
             "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
             "position": [
-                650,
+                660,
                 400
-            ],
-            "credentials": {
-                "httpHeaderAuth": {
-                    "id": "serper-api",
-                    "name": "Serper API"
-                }
-            }
+            ]
         },
         {
             "parameters": {
                 "url": "https://google.serper.dev/shopping",
+                "method": "POST",
                 "sendHeaders": true,
                 "headerParameters": {
                     "parameters": [
@@ -158,16 +149,11 @@
             "id": "search-walmart",
             "name": "Search Walmart",
             "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
             "position": [
-                650,
+                660,
                 550
-            ],
-            "credentials": {
-                "httpHeaderAuth": {
-                    "id": "serper-api",
-                    "name": "Serper API"
-                }
-            }
+            ]
         },
         {
             "parameters": {
@@ -178,6 +164,7 @@
             "id": "merge-results",
             "name": "Merge Store Results",
             "type": "n8n-nodes-base.merge",
+            "typeVersion": 3,
             "position": [
                 900,
                 300
@@ -185,11 +172,12 @@
         },
         {
             "parameters": {
-                "jsCode": "// Get all inputs from different store searches\nconst items = $input.all();\nconst prepareData = items[0]?.json || {};\n\n// Helper function to extract price from shopping results\nfunction extractBestResult(shoppingResults, storeName) {\n  if (!shoppingResults || !shoppingResults.shopping) return null;\n  \n  const results = shoppingResults.shopping;\n  if (results.length === 0) return null;\n  \n  // Get the first (most relevant) result\n  const best = results[0];\n  \n  // Extract price (remove $ and parse)\n  let price = null;\n  if (best.price) {\n    const priceMatch = best.price.match(/[\\d,]+\\.?\\d*/); \n    if (priceMatch) {\n      price = parseFloat(priceMatch[0].replace(/,/g, ''));\n    }\n  }\n  \n  return {\n    store: storeName,\n    title: best.title,\n    price: price,\n    currency: 'USD',\n    url: best.link,\n    source: best.source,\n    thumbnail: best.imageUrl\n  };\n}\n\n// Process each store's results\nconst amazonData = items.find(i => i.json.searchParameters?.q?.includes('amazon.com'));\nconst bestBuyData = items.find(i => i.json.searchParameters?.q?.includes('bestbuy.com'));\nconst bhData = items.find(i => i.json.searchParameters?.q?.includes('bhphotovideo.com'));\nconst walmartData = items.find(i => i.json.searchParameters?.q?.includes('walmart.com'));\n\nconst prices = [\n  extractBestResult(amazonData?.json, 'Amazon US'),\n  extractBestResult(bestBuyData?.json, 'Best Buy'),\n  extractBestResult(bhData?.json, 'B&H Photo'),\n  extractBestResult(walmartData?.json, 'Walmart')\n].filter(p => p !== null && p.price !== null);\n\n// Sort by price to find lowest\nprices.sort((a, b) => a.price - b.price);\n\n// Generate affiliate links\nconst affiliateBaseUrl = 'https://reviewpro.com/go';\nprices.forEach(p => {\n  const storeSlug = p.store.toLowerCase().replace(/[^a-z0-9]+/g, '-');\n  p.affiliateUrl = `${affiliateBaseUrl}/${storeSlug}/${prepareData.productSlug || 'product'}?ref=rp`;\n});\n\nreturn {\n  productName: prepareData.productName,\n  productModel: prepareData.productModel,\n  productSlug: prepareData.productSlug,\n  category: prepareData.category,\n  prices: prices,\n  lowestPrice: prices.length > 0 ? prices[0] : null,\n  priceRange: prices.length > 0 ? {\n    min: prices[0].price,\n    max: prices[prices.length - 1].price\n  } : null,\n  fetchedAt: new Date().toISOString()\n};"
+                "jsCode": "// Get all inputs from different store searches\nconst items = $input.all();\n// Safety check for empty inputs\nconst prepareData = items[0]?.json || $('Prepare Search Queries').first().json || {};\n\n// Helper function to extract price from shopping results\nfunction extractBestResult(shoppingResults, storeName) {\n  if (!shoppingResults || !shoppingResults.shopping) return null;\n  \n  const results = shoppingResults.shopping;\n  if (results.length === 0) return null;\n  \n  // Get the first (most relevant) result\n  const best = results[0];\n  \n  // Extract price (remove $ and parse)\n  let price = null;\n  if (best.price) {\n    const priceMatch = best.price.toString().match(/[\\d,]+\\.?\\d*/); \n    if (priceMatch) {\n      price = parseFloat(priceMatch[0].replace(/,/g, ''));\n    }\n  }\n  \n  return {\n    store: storeName,\n    title: best.title,\n    price: price,\n    currency: 'USD',\n    url: best.link,\n    source: best.source,\n    thumbnail: best.imageUrl\n  };\n}\n\n// Process each store's results safely\n// Finding items by checking the URL they were called with or order\nconst amazonData = items.find(i => i.json.searchParameters?.q?.includes('amazon.com'));\nconst bestBuyData = items.find(i => i.json.searchParameters?.q?.includes('bestbuy.com'));\nconst bhData = items.find(i => i.json.searchParameters?.q?.includes('bhphotovideo.com'));\nconst walmartData = items.find(i => i.json.searchParameters?.q?.includes('walmart.com'));\n\nconst prices = [\n  extractBestResult(amazonData?.json, 'Amazon US'),\n  extractBestResult(bestBuyData?.json, 'Best Buy'),\n  extractBestResult(bhData?.json, 'B&H Photo'),\n  extractBestResult(walmartData?.json, 'Walmart')\n].filter(p => p !== null && p.price !== null);\n\n// Sort by price to find lowest\nprices.sort((a, b) => a.price - b.price);\n\n// Generate affiliate links\nconst affiliateBaseUrl = 'https://reviewpro.com/go';\nprices.forEach(p => {\n  const storeSlug = p.store.toLowerCase().replace(/[^a-z0-9]+/g, '-');\n  p.affiliateUrl = `${affiliateBaseUrl}/${storeSlug}/${prepareData.productSlug || 'product'}?ref=rp`;\n});\n\nreturn {\n  productName: prepareData.productName,\n  productModel: prepareData.productModel,\n  productSlug: prepareData.productSlug,\n  category: prepareData.category,\n  prices: prices,\n  lowestPrice: prices.length > 0 ? prices[0] : null,\n  priceRange: prices.length > 0 ? {\n    min: prices[0].price,\n    max: prices[prices.length - 1].price\n  } : null,\n  fetchedAt: new Date().toISOString()\n};"
             },
             "id": "code-process",
             "name": "Process & Generate Affiliate Links",
             "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
             "position": [
                 1100,
                 300
@@ -201,7 +189,13 @@
                 "tableId": "prices",
                 "fieldsToSend": {
                     "mappingMode": "defineBelow",
-                    "value": {}
+                    "value": {
+                        "product_id": "={{ $json.productSlug }}",
+                        "store": "={{ $json.store }}",
+                        "price": "={{ $json.price }}",
+                        "url": "={{ $json.affiliateUrl }}",
+                        "updated_at": "={{ new Date().toISOString() }}"
+                    }
                 },
                 "options": {
                     "onConflict": "product_id,source"
@@ -210,6 +204,7 @@
             "id": "save-prices",
             "name": "Save Prices to Supabase",
             "type": "n8n-nodes-base.supabase",
+            "typeVersion": 1,
             "position": [
                 1300,
                 200
@@ -224,6 +219,7 @@
             "id": "respond",
             "name": "Respond with Prices",
             "type": "n8n-nodes-base.respondToWebhook",
+            "typeVersion": 1,
             "position": [
                 1500,
                 300
@@ -353,9 +349,5 @@
     },
     "settings": {
         "executionOrder": "v1"
-    },
-    "staticData": null,
-    "tags": [],
-    "triggerCount": 0,
-    "pinData": {}
+    }
 }
