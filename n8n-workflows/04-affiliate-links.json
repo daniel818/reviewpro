@@ -1,0 +1,361 @@
+{
+    "name": "Affiliate Links Collector",
+    "nodes": [
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "get-affiliate-links",
+                "responseMode": "responseNode",
+                "options": {}
+            },
+            "id": "webhook-1",
+            "name": "Webhook",
+            "type": "n8n-nodes-base.webhook",
+            "position": [
+                200,
+                300
+            ],
+            "webhookId": "get-affiliate-links"
+        },
+        {
+            "parameters": {
+                "jsCode": "// Extract product info from webhook\nconst input = $input.first().json.body || $input.first().json;\n\nconst productName = input.productName;\nconst productModel = input.model;\nconst category = input.category;\nconst productSlug = input.slug || productName.toLowerCase().replace(/[^a-z0-9]+/g, '-');\n\n// Generate search queries for each store\nconst searchQuery = `${productName} ${productModel}`.trim();\n\nreturn {\n  productName,\n  productModel,\n  category,\n  productSlug,\n  searchQuery,\n  amazonSearchUrl: `https://www.amazon.com/s?k=${encodeURIComponent(searchQuery)}`,\n  bestBuySearchUrl: `https://www.bestbuy.com/site/searchpage.jsp?st=${encodeURIComponent(searchQuery)}`,\n  bhPhotoSearchUrl: `https://www.bhphotovideo.com/c/search?q=${encodeURIComponent(searchQuery)}`,\n  walmartSearchUrl: `https://www.walmart.com/search?q=${encodeURIComponent(searchQuery)}`\n};"
+            },
+            "id": "code-prepare",
+            "name": "Prepare Search Queries",
+            "type": "n8n-nodes-base.code",
+            "position": [
+                400,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "url": "https://google.serper.dev/shopping",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "X-API-KEY",
+                            "value": "={{ $credentials.serperApiKey }}"
+                        },
+                        {
+                            "name": "Content-Type",
+                            "value": "application/json"
+                        }
+                    ]
+                },
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={\n  \"q\": \"{{ $json.searchQuery }} site:amazon.com\",\n  \"gl\": \"us\",\n  \"hl\": \"en\",\n  \"num\": 5\n}",
+                "options": {}
+            },
+            "id": "search-amazon",
+            "name": "Search Amazon",
+            "type": "n8n-nodes-base.httpRequest",
+            "position": [
+                650,
+                100
+            ],
+            "credentials": {
+                "httpHeaderAuth": {
+                    "id": "serper-api",
+                    "name": "Serper API"
+                }
+            }
+        },
+        {
+            "parameters": {
+                "url": "https://google.serper.dev/shopping",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "X-API-KEY",
+                            "value": "={{ $credentials.serperApiKey }}"
+                        },
+                        {
+                            "name": "Content-Type",
+                            "value": "application/json"
+                        }
+                    ]
+                },
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={\n  \"q\": \"{{ $json.searchQuery }} site:bestbuy.com\",\n  \"gl\": \"us\",\n  \"hl\": \"en\",\n  \"num\": 5\n}",
+                "options": {}
+            },
+            "id": "search-bestbuy",
+            "name": "Search Best Buy",
+            "type": "n8n-nodes-base.httpRequest",
+            "position": [
+                650,
+                250
+            ],
+            "credentials": {
+                "httpHeaderAuth": {
+                    "id": "serper-api",
+                    "name": "Serper API"
+                }
+            }
+        },
+        {
+            "parameters": {
+                "url": "https://google.serper.dev/shopping",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "X-API-KEY",
+                            "value": "={{ $credentials.serperApiKey }}"
+                        },
+                        {
+                            "name": "Content-Type",
+                            "value": "application/json"
+                        }
+                    ]
+                },
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={\n  \"q\": \"{{ $json.searchQuery }} site:bhphotovideo.com\",\n  \"gl\": \"us\",\n  \"hl\": \"en\",\n  \"num\": 5\n}",
+                "options": {}
+            },
+            "id": "search-bh",
+            "name": "Search B&H Photo",
+            "type": "n8n-nodes-base.httpRequest",
+            "position": [
+                650,
+                400
+            ],
+            "credentials": {
+                "httpHeaderAuth": {
+                    "id": "serper-api",
+                    "name": "Serper API"
+                }
+            }
+        },
+        {
+            "parameters": {
+                "url": "https://google.serper.dev/shopping",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "X-API-KEY",
+                            "value": "={{ $credentials.serperApiKey }}"
+                        },
+                        {
+                            "name": "Content-Type",
+                            "value": "application/json"
+                        }
+                    ]
+                },
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={\n  \"q\": \"{{ $json.searchQuery }} site:walmart.com\",\n  \"gl\": \"us\",\n  \"hl\": \"en\",\n  \"num\": 5\n}",
+                "options": {}
+            },
+            "id": "search-walmart",
+            "name": "Search Walmart",
+            "type": "n8n-nodes-base.httpRequest",
+            "position": [
+                650,
+                550
+            ],
+            "credentials": {
+                "httpHeaderAuth": {
+                    "id": "serper-api",
+                    "name": "Serper API"
+                }
+            }
+        },
+        {
+            "parameters": {
+                "mode": "combine",
+                "combineBy": "combineAll",
+                "options": {}
+            },
+            "id": "merge-results",
+            "name": "Merge Store Results",
+            "type": "n8n-nodes-base.merge",
+            "position": [
+                900,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "// Get all inputs from different store searches\nconst items = $input.all();\nconst prepareData = items[0]?.json || {};\n\n// Helper function to extract price from shopping results\nfunction extractBestResult(shoppingResults, storeName) {\n  if (!shoppingResults || !shoppingResults.shopping) return null;\n  \n  const results = shoppingResults.shopping;\n  if (results.length === 0) return null;\n  \n  // Get the first (most relevant) result\n  const best = results[0];\n  \n  // Extract price (remove $ and parse)\n  let price = null;\n  if (best.price) {\n    const priceMatch = best.price.match(/[\\d,]+\\.?\\d*/); \n    if (priceMatch) {\n      price = parseFloat(priceMatch[0].replace(/,/g, ''));\n    }\n  }\n  \n  return {\n    store: storeName,\n    title: best.title,\n    price: price,\n    currency: 'USD',\n    url: best.link,\n    source: best.source,\n    thumbnail: best.imageUrl\n  };\n}\n\n// Process each store's results\nconst amazonData = items.find(i => i.json.searchParameters?.q?.includes('amazon.com'));\nconst bestBuyData = items.find(i => i.json.searchParameters?.q?.includes('bestbuy.com'));\nconst bhData = items.find(i => i.json.searchParameters?.q?.includes('bhphotovideo.com'));\nconst walmartData = items.find(i => i.json.searchParameters?.q?.includes('walmart.com'));\n\nconst prices = [\n  extractBestResult(amazonData?.json, 'Amazon US'),\n  extractBestResult(bestBuyData?.json, 'Best Buy'),\n  extractBestResult(bhData?.json, 'B&H Photo'),\n  extractBestResult(walmartData?.json, 'Walmart')\n].filter(p => p !== null && p.price !== null);\n\n// Sort by price to find lowest\nprices.sort((a, b) => a.price - b.price);\n\n// Generate affiliate links\nconst affiliateBaseUrl = 'https://reviewpro.com/go';\nprices.forEach(p => {\n  const storeSlug = p.store.toLowerCase().replace(/[^a-z0-9]+/g, '-');\n  p.affiliateUrl = `${affiliateBaseUrl}/${storeSlug}/${prepareData.productSlug || 'product'}?ref=rp`;\n});\n\nreturn {\n  productName: prepareData.productName,\n  productModel: prepareData.productModel,\n  productSlug: prepareData.productSlug,\n  category: prepareData.category,\n  prices: prices,\n  lowestPrice: prices.length > 0 ? prices[0] : null,\n  priceRange: prices.length > 0 ? {\n    min: prices[0].price,\n    max: prices[prices.length - 1].price\n  } : null,\n  fetchedAt: new Date().toISOString()\n};"
+            },
+            "id": "code-process",
+            "name": "Process & Generate Affiliate Links",
+            "type": "n8n-nodes-base.code",
+            "position": [
+                1100,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "operation": "upsert",
+                "tableId": "prices",
+                "fieldsToSend": {
+                    "mappingMode": "defineBelow",
+                    "value": {}
+                },
+                "options": {
+                    "onConflict": "product_id,source"
+                }
+            },
+            "id": "save-prices",
+            "name": "Save Prices to Supabase",
+            "type": "n8n-nodes-base.supabase",
+            "position": [
+                1300,
+                200
+            ],
+            "disabled": true
+        },
+        {
+            "parameters": {
+                "respondWith": "json",
+                "responseBody": "={{ JSON.stringify($json) }}"
+            },
+            "id": "respond",
+            "name": "Respond with Prices",
+            "type": "n8n-nodes-base.respondToWebhook",
+            "position": [
+                1500,
+                300
+            ]
+        }
+    ],
+    "connections": {
+        "Webhook": {
+            "main": [
+                [
+                    {
+                        "node": "Prepare Search Queries",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Prepare Search Queries": {
+            "main": [
+                [
+                    {
+                        "node": "Search Amazon",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "Search Best Buy",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "Search B&H Photo",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "Search Walmart",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Search Amazon": {
+            "main": [
+                [
+                    {
+                        "node": "Merge Store Results",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Search Best Buy": {
+            "main": [
+                [
+                    {
+                        "node": "Merge Store Results",
+                        "type": "main",
+                        "index": 1
+                    }
+                ]
+            ]
+        },
+        "Search B&H Photo": {
+            "main": [
+                [
+                    {
+                        "node": "Merge Store Results",
+                        "type": "main",
+                        "index": 2
+                    }
+                ]
+            ]
+        },
+        "Search Walmart": {
+            "main": [
+                [
+                    {
+                        "node": "Merge Store Results",
+                        "type": "main",
+                        "index": 3
+                    }
+                ]
+            ]
+        },
+        "Merge Store Results": {
+            "main": [
+                [
+                    {
+                        "node": "Process & Generate Affiliate Links",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Process & Generate Affiliate Links": {
+            "main": [
+                [
+                    {
+                        "node": "Save Prices to Supabase",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "Respond with Prices",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Save Prices to Supabase": {
+            "main": [
+                [
+                    {
+                        "node": "Respond with Prices",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "settings": {
+        "executionOrder": "v1"
+    },
+    "staticData": null,
+    "tags": [],
+    "triggerCount": 0,
+    "pinData": {}
+}

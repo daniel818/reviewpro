@@ -1,0 +1,324 @@
+{
+    "name": "Master Category Orchestrator",
+    "nodes": [
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "start-category-review",
+                "responseMode": "responseNode",
+                "options": {}
+            },
+            "id": "webhook-1",
+            "name": "Webhook",
+            "type": "n8n-nodes-base.webhook",
+            "position": [
+                200,
+                300
+            ],
+            "webhookId": "start-category-review"
+        },
+        {
+            "parameters": {
+                "jsCode": "// Category configuration with specs templates and sources\nconst input = $input.first().json.body || $input.first().json;\n\nconst categoryConfigs = {\n  tv: {\n    displayName: 'TVs',\n    requiredSpecs: ['screenSize', 'resolution', 'panelType', 'hdr', 'refreshRate'],\n    optionalSpecs: ['hdmiPorts', 'smartPlatform', 'speakers', 'gamingFeatures'],\n    expertSites: ['rtings.com', 'hdtvtest.co.uk', 'flatpanelshd.com'],\n    searchQuery: 'best TV 2024 2025 review'\n  },\n  headphones: {\n    displayName: 'Headphones',\n    requiredSpecs: ['type', 'driver', 'frequency', 'anc', 'battery'],\n    optionalSpecs: ['impedance', 'codec', 'weight', 'wireless'],\n    expertSites: ['rtings.com', 'soundguys.com', 'whathifi.com'],\n    searchQuery: 'best headphones 2024 2025 review'\n  },\n  smartphone: {\n    displayName: 'Smartphones',\n    requiredSpecs: ['screen', 'processor', 'ram', 'storage', 'camera', 'battery'],\n    optionalSpecs: ['5g', 'waterproof', 'wireless', 'os'],\n    expertSites: ['gsmarena.com', 'tomsguide.com', 'theverge.com'],\n    searchQuery: 'best smartphone 2024 2025 review'\n  },\n  laptop: {\n    displayName: 'Laptops',\n    requiredSpecs: ['processor', 'ram', 'storage', 'screen', 'gpu', 'battery'],\n    optionalSpecs: ['weight', 'ports', 'keyboard', 'webcam'],\n    expertSites: ['notebookcheck.net', 'tomshardware.com', 'laptopmag.com'],\n    searchQuery: 'best laptop 2024 2025 review'\n  },\n  camera: {\n    displayName: 'Cameras',\n    requiredSpecs: ['sensor', 'megapixels', 'iso', 'video', 'autofocus'],\n    optionalSpecs: ['lens', 'stabilization', 'viewfinder', 'connectivity'],\n    expertSites: ['dpreview.com', 'imaging-resource.com', 'photographyblog.com'],\n    searchQuery: 'best camera 2024 2025 review'\n  }\n};\n\nconst category = input.category?.toLowerCase() || 'tv';\nconst config = categoryConfigs[category] || categoryConfigs.tv;\nconst limit = input.limit || 10;\n\nreturn {\n  category,\n  config,\n  limit,\n  customSearchQuery: input.searchQuery || config.searchQuery\n};"
+            },
+            "id": "code-config",
+            "name": "Load Category Config",
+            "type": "n8n-nodes-base.code",
+            "position": [
+                400,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "url": "https://google.serper.dev/search",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "X-API-KEY",
+                            "value": "={{ $credentials.serperApiKey }}"
+                        },
+                        {
+                            "name": "Content-Type",
+                            "value": "application/json"
+                        }
+                    ]
+                },
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={\n  \"q\": \"{{ $json.customSearchQuery }}\",\n  \"gl\": \"us\",\n  \"hl\": \"en\",\n  \"num\": 20\n}",
+                "options": {}
+            },
+            "id": "search-products",
+            "name": "Search Top Products",
+            "type": "n8n-nodes-base.httpRequest",
+            "position": [
+                600,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "model": "gpt-4o-mini",
+                "options": {
+                    "temperature": 0.3,
+                    "maxTokens": 3000
+                },
+                "messages": {
+                    "values": [
+                        {
+                            "role": "system",
+                            "content": "You are a product research assistant. Extract product information from search results accurately. Only include real products with model numbers."
+                        },
+                        {
+                            "role": "user",
+                            "content": "=From these search results about {{ $json.config.displayName }}, extract the top {{ $json.limit }} products:\n\nSearch Results:\n{{ JSON.stringify($json.organic || [], null, 2) }}\n\nFor each product, extract:\n- productName: Full product name\n- model: Official model number\n- vendor: Manufacturer/brand\n- releaseDate: Approximate release date if known\n- estimatedPrice: Price if mentioned\n\nRequired specs to look for: {{ $json.config.requiredSpecs.join(', ') }}\n\nReturn JSON array:\n[\n  {\n    \"productName\": \"LG C4 OLED 65\\\"\",\n    \"model\": \"OLED65C4PUA\",\n    \"vendor\": \"LG\",\n    \"releaseDate\": \"2024-03\",\n    \"estimatedPrice\": \"$1499\",\n    \"specs\": {\n      \"screenSize\": \"65 inch\",\n      \"resolution\": \"3840x2160\",\n      \"panelType\": \"OLED\"\n    }\n  }\n]\n\nOnly include products you're confident about. Return valid JSON array only."
+                        }
+                    ]
+                }
+            },
+            "id": "gpt4-extract",
+            "name": "GPT-4 Extract Products",
+            "type": "@n8n/n8n-nodes-langchain.openAi",
+            "position": [
+                800,
+                300
+            ],
+            "credentials": {
+                "openAiApi": {
+                    "id": "openai",
+                    "name": "OpenAI API"
+                }
+            }
+        },
+        {
+            "parameters": {
+                "jsCode": "// Parse extracted products\nconst rawResponse = $input.first().json.text || $input.first().json.message?.content || '';\nconst configData = $('Load Category Config').first().json;\n\nlet products;\ntry {\n  // Try to extract JSON array from response\n  const jsonMatch = rawResponse.match(/\\[[\\s\\S]*\\]/);\n  if (jsonMatch) {\n    products = JSON.parse(jsonMatch[0]);\n  } else {\n    throw new Error('No JSON array found');\n  }\n} catch (e) {\n  products = [];\n}\n\n// Enrich products with category info and search prompts\nproducts = products.map((p, i) => ({\n  ...p,\n  category: configData.category,\n  categoryConfig: configData.config,\n  searchPrompt: `${p.productName} ${p.model || ''} review specs`.trim(),\n  order: i + 1\n}));\n\nreturn {\n  category: configData.category,\n  categoryDisplay: configData.config.displayName,\n  totalProducts: products.length,\n  products: products.slice(0, configData.limit)\n};"
+            },
+            "id": "code-parse",
+            "name": "Parse Products",
+            "type": "n8n-nodes-base.code",
+            "position": [
+                1000,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "batchSize": 1,
+                "options": {}
+            },
+            "id": "split-products",
+            "name": "Split Into Batches",
+            "type": "n8n-nodes-base.splitInBatches",
+            "position": [
+                1200,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "// Prepare single product for sub-workflow\nconst batchData = $input.first().json;\nconst products = batchData.products || [batchData];\nconst product = products[0];\n\nif (!product || !product.productName) {\n  return { skip: true };\n}\n\nreturn {\n  productName: product.productName,\n  model: product.model,\n  vendor: product.vendor,\n  category: product.category,\n  releaseDate: product.releaseDate,\n  specs: product.specs || {},\n  searchPrompt: product.searchPrompt\n};"
+            },
+            "id": "code-prepare-product",
+            "name": "Prepare Product Data",
+            "type": "n8n-nodes-base.code",
+            "position": [
+                1400,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "url": "http://localhost:5678/webhook/research-product",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ JSON.stringify($json) }}",
+                "options": {
+                    "timeout": 120000
+                }
+            },
+            "id": "call-research",
+            "name": "Call Product Research",
+            "type": "n8n-nodes-base.httpRequest",
+            "position": [
+                1600,
+                200
+            ],
+            "disabled": true
+        },
+        {
+            "parameters": {
+                "url": "http://localhost:5678/webhook/aggregate-reviews",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ JSON.stringify($json) }}",
+                "options": {
+                    "timeout": 120000
+                }
+            },
+            "id": "call-aggregator",
+            "name": "Call Review Aggregator",
+            "type": "n8n-nodes-base.httpRequest",
+            "position": [
+                1600,
+                400
+            ],
+            "disabled": true
+        },
+        {
+            "parameters": {
+                "url": "http://localhost:5678/webhook/get-affiliate-links",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ JSON.stringify($json) }}",
+                "options": {
+                    "timeout": 60000
+                }
+            },
+            "id": "call-affiliate",
+            "name": "Call Affiliate Links",
+            "type": "n8n-nodes-base.httpRequest",
+            "position": [
+                1800,
+                300
+            ],
+            "disabled": true
+        },
+        {
+            "parameters": {
+                "respondWith": "json",
+                "responseBody": "={{ JSON.stringify({ success: true, category: $json.category, productsFound: $json.totalProducts, products: $json.products }) }}"
+            },
+            "id": "respond",
+            "name": "Respond",
+            "type": "n8n-nodes-base.respondToWebhook",
+            "position": [
+                2000,
+                300
+            ]
+        }
+    ],
+    "connections": {
+        "Webhook": {
+            "main": [
+                [
+                    {
+                        "node": "Load Category Config",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Load Category Config": {
+            "main": [
+                [
+                    {
+                        "node": "Search Top Products",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Search Top Products": {
+            "main": [
+                [
+                    {
+                        "node": "GPT-4 Extract Products",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "GPT-4 Extract Products": {
+            "main": [
+                [
+                    {
+                        "node": "Parse Products",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Parse Products": {
+            "main": [
+                [
+                    {
+                        "node": "Respond",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Split Into Batches": {
+            "main": [
+                [
+                    {
+                        "node": "Prepare Product Data",
+                        "type": "main",
+                        "index": 0
+                    }
+                ],
+                [
+                    {
+                        "node": "Respond",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Prepare Product Data": {
+            "main": [
+                [
+                    {
+                        "node": "Call Product Research",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "Call Review Aggregator",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Call Product Research": {
+            "main": [
+                [
+                    {
+                        "node": "Call Affiliate Links",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Call Review Aggregator": {
+            "main": [
+                []
+            ]
+        },
+        "Call Affiliate Links": {
+            "main": [
+                [
+                    {
+                        "node": "Split Into Batches",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "settings": {
+        "executionOrder": "v1"
+    }
+}

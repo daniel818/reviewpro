@@ -1,0 +1,169 @@
+{
+    "name": "Comparison Generator",
+    "nodes": [
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "generate-comparison",
+                "responseMode": "responseNode",
+                "options": {}
+            },
+            "id": "webhook-1",
+            "name": "Webhook",
+            "type": "n8n-nodes-base.webhook",
+            "position": [
+                200,
+                300
+            ],
+            "webhookId": "generate-comparison"
+        },
+        {
+            "parameters": {
+                "jsCode": "// Extract products data for comparison\nconst input = $input.first().json.body || $input.first().json;\n\nreturn {\n  category: input.category,\n  products: input.products || [],\n  comparisonType: input.comparisonType || 'full', // full, quick, specs-only\n  focusAreas: input.focusAreas || ['performance', 'value', 'features']\n};"
+            },
+            "id": "code-prepare",
+            "name": "Prepare Comparison",
+            "type": "n8n-nodes-base.code",
+            "position": [
+                400,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "model": "gpt-4o",
+                "options": {
+                    "temperature": 0.5,
+                    "maxTokens": 4000
+                },
+                "messages": {
+                    "values": [
+                        {
+                            "role": "system",
+                            "content": "You are a product comparison expert. Create detailed, unbiased comparisons that help consumers make informed decisions. Focus on practical differences and clear recommendations."
+                        },
+                        {
+                            "role": "user",
+                            "content": "=Create a comprehensive comparison for these {{ $json.category }} products:\n\n{{ JSON.stringify($json.products, null, 2) }}\n\nFocus areas: {{ $json.focusAreas.join(', ') }}\n\nGenerate a JSON comparison:\n{\n  \"category\": \"{{ $json.category }}\",\n  \"comparisonTable\": {\n    \"headers\": [\"Feature\", \"Product1\", \"Product2\", ...],\n    \"rows\": [\n      [\"Price\", \"$999\", \"$1199\", ...],\n      [\"Overall Score\", \"88\", \"92\", ...],\n      // Key differentiating specs...\n    ]\n  },\n  \"rankings\": {\n    \"bestOverall\": {\n      \"product\": \"Product Name\",\n      \"reason\": \"Why it's the best overall choice\"\n    },\n    \"bestValue\": {\n      \"product\": \"Product Name\",\n      \"reason\": \"Why it offers the best value\"\n    },\n    \"bestPerformance\": {\n      \"product\": \"Product Name\",\n      \"reason\": \"Why it has the best performance\"\n    },\n    \"bestFor\": [\n      { \"useCase\": \"Gaming\", \"product\": \"Product Name\", \"reason\": \"...\" },\n      { \"useCase\": \"Movies\", \"product\": \"Product Name\", \"reason\": \"...\" },\n      { \"useCase\": \"Budget\", \"product\": \"Product Name\", \"reason\": \"...\" }\n    ]\n  },\n  \"keyDifferences\": [\n    {\n      \"aspect\": \"Picture Quality\",\n      \"summary\": \"How products differ in this aspect\",\n      \"winner\": \"Product Name\"\n    }\n  ],\n  \"avoidProducts\": [\n    {\n      \"product\": \"Product Name\",\n      \"reason\": \"Why to avoid unless specific condition\"\n    }\n  ],\n  \"quickVerdict\": \"2-3 sentence summary for quick decision making\"\n}"
+                        }
+                    ]
+                }
+            },
+            "id": "gpt4-compare",
+            "name": "GPT-4 Generate Comparison",
+            "type": "@n8n/n8n-nodes-langchain.openAi",
+            "position": [
+                600,
+                300
+            ],
+            "credentials": {
+                "openAiApi": {
+                    "id": "openai",
+                    "name": "OpenAI API"
+                }
+            }
+        },
+        {
+            "parameters": {
+                "jsCode": "// Parse comparison results\nconst rawResponse = $input.first().json.text || $input.first().json.message?.content || '';\nconst inputData = $('Prepare Comparison').first().json;\n\nlet comparison;\ntry {\n  const jsonMatch = rawResponse.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    comparison = JSON.parse(jsonMatch[0]);\n  } else {\n    throw new Error('No JSON found');\n  }\n} catch (e) {\n  comparison = {\n    category: inputData.category,\n    comparisonTable: { headers: [], rows: [] },\n    rankings: {},\n    keyDifferences: [],\n    avoidProducts: [],\n    quickVerdict: rawResponse\n  };\n}\n\nreturn {\n  ...comparison,\n  productCount: inputData.products.length,\n  generatedAt: new Date().toISOString()\n};"
+            },
+            "id": "code-parse",
+            "name": "Parse Comparison",
+            "type": "n8n-nodes-base.code",
+            "position": [
+                800,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "operation": "insert",
+                "tableId": "comparisons",
+                "fieldsToSend": {
+                    "mappingMode": "autoMapInputData"
+                },
+                "options": {}
+            },
+            "id": "save-comparison",
+            "name": "Save to Supabase",
+            "type": "n8n-nodes-base.supabase",
+            "position": [
+                1000,
+                200
+            ],
+            "disabled": true
+        },
+        {
+            "parameters": {
+                "respondWith": "json",
+                "responseBody": "={{ JSON.stringify($json) }}"
+            },
+            "id": "respond",
+            "name": "Respond",
+            "type": "n8n-nodes-base.respondToWebhook",
+            "position": [
+                1200,
+                300
+            ]
+        }
+    ],
+    "connections": {
+        "Webhook": {
+            "main": [
+                [
+                    {
+                        "node": "Prepare Comparison",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Prepare Comparison": {
+            "main": [
+                [
+                    {
+                        "node": "GPT-4 Generate Comparison",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "GPT-4 Generate Comparison": {
+            "main": [
+                [
+                    {
+                        "node": "Parse Comparison",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Parse Comparison": {
+            "main": [
+                [
+                    {
+                        "node": "Save to Supabase",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "Respond",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Save to Supabase": {
+            "main": [
+                []
+            ]
+        }
+    },
+    "settings": {
+        "executionOrder": "v1"
+    }
+}

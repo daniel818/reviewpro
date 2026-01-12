@@ -1,0 +1,317 @@
+{
+    "name": "Review Generator",
+    "nodes": [
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "generate-review",
+                "responseMode": "responseNode",
+                "options": {}
+            },
+            "id": "webhook-1",
+            "name": "Webhook",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 2,
+            "position": [
+                200,
+                300
+            ],
+            "webhookId": "generate-review-v2"
+        },
+        {
+            "parameters": {
+                "jsCode": "// Extract and validate input data\nconst input = $input.first().json.body || $input.first().json;\n\nconst productData = {\n  productName: input.productName,\n  model: input.model,\n  vendor: input.vendor,\n  category: input.category,\n  releaseDate: input.releaseDate,\n  specs: input.specs || {},\n  expertReviews: input.expertReviews || [],\n  customerReviews: input.customerReviews || {},\n  youtubeReviews: input.youtubeReviews || [],\n  articleReviews: input.articleReviews || [],\n  discussions: input.discussions || []\n};\n\n// Generate slug\nproductData.slug = input.slug || productData.productName\n  .toLowerCase()\n  .replace(/[^a-z0-9]+/g, '-')\n  .replace(/^-|-$/g, '');\n\nreturn productData;"
+            },
+            "id": "code-prepare",
+            "name": "Prepare Data",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                420,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "model": "gpt-4o-mini",
+                "options": {
+                    "temperature": 0.7
+                }
+            },
+            "id": "openai-chat-model",
+            "name": "OpenAI Chat Model",
+            "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+            "typeVersion": 1,
+            "position": [
+                600,
+                540
+            ],
+            "credentials": {
+                "openAiApi": {
+                    "id": "openai",
+                    "name": "OpenAI API"
+                }
+            }
+        },
+        {
+            "parameters": {
+                "url": "https://google.serper.dev/search",
+                "method": "POST",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "X-API-KEY",
+                            "value": "={{ $credentials.serperApiKey }}"
+                        },
+                        {
+                            "name": "Content-Type",
+                            "value": "application/json"
+                        }
+                    ]
+                },
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={ \"q\": \"{{$fromAI(\"query\")}}\", \"num\": 3, \"gl\": \"us\", \"hl\": \"en\" }",
+                "toolDescription": "Search Google for comprehensive product information, official specs, and expert reviews. Use this tool if you are missing specific details about the product.",
+                "toolName": "google_search"
+            },
+            "id": "serper-tool",
+            "name": "Serper Search Tool",
+            "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+            "typeVersion": 1,
+            "position": [
+                800,
+                540
+            ]
+        },
+        {
+            "parameters": {
+                "text": "=Based on the following data, create a comprehensive product review:\n\n**Product:** {{ $json.productName }}\n**Model:** {{ $json.model }}\n**Vendor:** {{ $json.vendor }}\n**Category:** {{ $json.category }}\n**Release Date:** {{ $json.releaseDate }}\n\n**Technical Specifications:**\n{{ JSON.stringify($json.specs, null, 2) }}\n\n**Expert Reviews:**\n{{ JSON.stringify($json.expertReviews, null, 2) }}\n\n**Customer Feedback:**\n{{ JSON.stringify($json.customerReviews, null, 2) }}\n\n**YouTube Reviews:**\n{{ JSON.stringify($json.youtubeReviews, null, 2) }}\n\n**Article Reviews:**\n{{ JSON.stringify($json.articleReviews, null, 2) }}\n\n**Reddit/Forum Discussions:**\n{{ JSON.stringify($json.discussions, null, 2) }}\n\nOutput JSON format:\n{\n \"summary\": \"3-4 paragraph comprehensive description of the product, its strengths, weaknesses, and ideal use cases\",\n \"pros\": [\"Specific advantage 1\", \"Specific advantage 2\", \"...\"],\n \"cons\": [\"Specific disadvantage 1\", \"Specific disadvantage 2\", \"...\"],\n \"detailed_analysis\": {\n \"design\": \"Analysis of build quality, aesthetics, ergonomics\",\n \"performance\": \"Analysis of core functionality and measured metrics\",\n \"value\": \"Price-to-performance analysis compared to alternatives\"\n },\n \"overall_score\": 85,\n \"best_for\": [\"Use case 1\", \"Use case 2\"],\n \"avoid_if\": [\"Reason to avoid 1\", \"Reason to avoid 2\"],\n \"verdict\": \"One sentence final verdict\",\n \"image_prompt\": \"Professional product photography prompt for DALL-E: detailed description of the product on a clean background with studio lighting\"\n}",
+                "options": {
+                    "systemMessage": "You are a professional product reviewer. Your task is to synthesize information from multiple sources into a comprehensive, balanced review.\n\nGuidelines:\n1. WRITE IN CLEAR, ENGAGING ENGLISH.\n2. Highlight both strengths and weaknesses objectively.\n3. IF DATA IS MISSING (like specs or consensus), USE THE 'google_search' TOOL to find it.\n4. Structure analysis by categories: Design, Performance, Value.\n5. You MUST output valid JSON only."
+                }
+            },
+            "id": "ai-agent",
+            "name": "AI Agent",
+            "type": "@n8n/n8n-nodes-langchain.agent",
+            "typeVersion": 1,
+            "position": [
+                640,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "// Parse the GPT-4 response\nconst rawResponse = $input.first().json.output || $input.first().json.text || $input.first().json.message?.content || '';\n\nlet reviewData;\ntry {\n  // Try to extract JSON from the response\n  // Handle potential markdown code blocks\n  const jsonMatch = rawResponse.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    reviewData = JSON.parse(jsonMatch[0]);\n  } else {\n    throw new Error('No JSON found in response');\n  }\n} catch (e) {\n  // Fallback structure if parsing fails\n  reviewData = {\n    summary: rawResponse,\n    pros: [],\n    cons: [],\n    detailed_analysis: {},\n    overall_score: 0,\n    best_for: [],\n    avoid_if: [],\n    verdict: '',\n    image_prompt: ''\n  };\n}\n\n// Get original product data from previous node\nconst productData = $('Prepare Data').first().json;\n\nreturn {\n  ...productData,\n  review: reviewData,\n  imagePrompt: reviewData.image_prompt\n};"
+            },
+            "id": "code-parse",
+            "name": "Parse Review Response",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                960,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "url": "https://google.serper.dev/images",
+                "method": "POST",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "X-API-KEY",
+                            "value": "={{ $credentials.serperApiKey }}"
+                        },
+                        {
+                            "name": "Content-Type",
+                            "value": "application/json"
+                        }
+                    ]
+                },
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={\n  \"q\": \"{{ $('Prepare Data').first().json.productName }} product official white background\",\n  \"gl\": \"us\",\n  \"hl\": \"en\",\n  \"num\": 3\n}",
+                "options": {}
+            },
+            "id": "search-product-image",
+            "name": "Search Product Image (Serper)",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                1180,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "// Combine product data with searched image\nconst productData = $('Parse Review Response').first().json;\nconst imageData = $input.first().json;\n\n// Extract image URL from Serper response (take the first image)\nconst imageUrl = imageData.images?.[0]?.imageUrl || null;\n\nreturn {\n  product: {\n    name: productData.productName,\n    slug: productData.slug,\n    category: productData.category,\n    subcategory: productData.subcategory || null,\n    images: imageUrl ? [imageUrl] : [],\n    specs: productData.specs,\n    overall_score: productData.review.overall_score\n  },\n  review: {\n    summary_en: productData.review.summary,\n    pros: productData.review.pros,\n    cons: productData.review.cons,\n    detailed_analysis: productData.review.detailed_analysis,\n    best_for: productData.review.best_for,\n    avoid_if: productData.review.avoid_if,\n    verdict: productData.review.verdict,\n    sources: {\n      expertReviews: productData.expertReviews?.map(r => r.source) || [],\n      youtubeReviews: productData.youtubeReviews?.map(r => r.channel) || [],\n      articleReviews: productData.articleReviews?.map(r => r.source) || []\n    },\n    status: 'published'\n  },\n  metadata: {\n    generatedAt: new Date().toISOString(),\n    model: productData.model,\n    vendor: productData.vendor\n  }\n};"
+            },
+            "id": "code-format",
+            "name": "Format Final Output",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                1400,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "operation": "insert",
+                "tableId": "products",
+                "fieldsToSend": {
+                    "mappingMode": "autoMapInputData"
+                },
+                "options": {}
+            },
+            "id": "save-product",
+            "name": "Save Product to Supabase",
+            "type": "n8n-nodes-base.supabase",
+            "typeVersion": 1,
+            "position": [
+                1620,
+                200
+            ],
+            "disabled": true
+        },
+        {
+            "parameters": {
+                "operation": "insert",
+                "tableId": "reviews",
+                "fieldsToSend": {
+                    "mappingMode": "autoMapInputData"
+                },
+                "options": {}
+            },
+            "id": "save-review",
+            "name": "Save Review to Supabase",
+            "type": "n8n-nodes-base.supabase",
+            "typeVersion": 1,
+            "position": [
+                1620,
+                400
+            ],
+            "disabled": true
+        },
+        {
+            "parameters": {
+                "respondWith": "json",
+                "responseBody": "={{ JSON.stringify({ success: true, product: $json.product, review: $json.review, metadata: $json.metadata }) }}"
+            },
+            "id": "respond",
+            "name": "Respond",
+            "type": "n8n-nodes-base.respondToWebhook",
+            "typeVersion": 1,
+            "position": [
+                1840,
+                300
+            ]
+        }
+    ],
+    "connections": {
+        "Webhook": {
+            "main": [
+                [
+                    {
+                        "node": "Prepare Data",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Prepare Data": {
+            "main": [
+                [
+                    {
+                        "node": "AI Agent",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "OpenAI Chat Model": {
+            "ai_languageModel": [
+                [
+                    {
+                        "node": "AI Agent",
+                        "type": "ai_languageModel",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Serper Search Tool": {
+            "ai_tool": [
+                [
+                    {
+                        "node": "AI Agent",
+                        "type": "ai_tool",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "AI Agent": {
+            "main": [
+                [
+                    {
+                        "node": "Parse Review Response",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Parse Review Response": {
+            "main": [
+                [
+                    {
+                        "node": "Search Product Image (Serper)",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Search Product Image (Serper)": {
+            "main": [
+                [
+                    {
+                        "node": "Format Final Output",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Format Final Output": {
+            "main": [
+                [
+                    {
+                        "node": "Save Product to Supabase",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "Save Review to Supabase",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "Respond",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "settings": {
+        "executionOrder": "v1"
+    }
+}
